@@ -1,20 +1,19 @@
 # African Vultures Optimization Algorithm (AVOA) Implementation in MPI
 
-This repository contains an implementation of the Adaptive Vulture Optimization Algorithm (AVOA) using the Message Passing Interface (MPI) for parallel processing. The project is written in C++ and utilizes Boost libraries for mathematical computations.
+This repository contains an implementation of the African Vulture Optimization Algorithm (AVOA) using the Message Passing Interface (MPI) for parallel processing. The project is written in C++ and utilizes Boost libraries for mathematical computations.
 
 ## Table of Contents
 
 - [Introduction](#introduction)
 - [Algorithm](#algorithm)
+- [Getting Started](#getting-started)
+- [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Usage](#usage)
-- [Examples](#examples)
-- [Contributing](#contributing)
-- [License](#license)
+- [Conclusion](#conclusion)
 
 ## Introduction
 
-The Adaptive Vulture Optimization Algorithm (AVOA) is a nature-inspired optimization technique that mimics the behavior of vultures searching for food. This algorithm is particularly useful for solving complex optimization problems with multiple local optima.
+The African Vulture Optimization Algorithm (AVOA) is a nature-inspired optimization technique that mimics the behavior of vultures searching for food. This algorithm is particularly useful for solving complex optimization problems with multiple local optima.
 
 This implementation leverages MPI to distribute the computational load across multiple processors, making it suitable for large-scale optimization problems.
 
@@ -28,46 +27,27 @@ The AVOA algorithm follows these steps:
 4. **Best Solution Update**: Keep track of the best and second-best solutions found so far.
 5. **Iterations**: Repeat the fitness calculation and position update steps for a specified number of iterations or until a convergence criterion is met.
 
-## Installation
+## Getting Started
 
-1. **Clone the repository**:
-    ```bash
-    git clone https://github.com/FarahMurtaza/avoa-mpi.git
-    cd avoa-mpi
-    ```
+Before running the AVOA algorithm, ensure that you have the following prerequisites installed on your system:
 
-2. **Install MPI**:
-    Follow the instructions to install MPI on your system. For example, on Ubuntu:
-    ```bash
-    sudo apt-get update
-    sudo apt-get install mpich
-    ```
+- **C and C++ Compiler**: A compiler that supports C++14 standard.
+- **MPI Library**: An implementation of the Message Passing Interface (MPI), such as MPICH or OpenMPI.
+- **Boost Libraries**: Boost C++ libraries, particularly for mathematical functions.
 
-3. **Install Boost libraries**:
-    Follow the instructions to install Boost on your system. For example, on Ubuntu:
-    ```bash
-    sudo apt-get install libboost-all-dev
-    ```
 
-4. **Compile the project**:
-    ```bash
-    make
-    ```
+### Installation
 
-## Usage
+To install and run this project, follow these steps:
 
-1. **Run the AVOA algorithm**:
-    ```bash
-    mpirun -np <number_of_processes> ./main
-    ```
+- Clone the repository: `git clone https://github.com/FarahMurtaza/African_vultures_optimization_algorithm`
+- Navigate to the project directory: `cd African_vultures_optimization_algorithm`
+- Build the project: `make`
+- Run the executable: `./main`
 
-    Replace `<number_of_processes>` with the desired number of processes. For example:
-    ```bash
-    mpirun -np 4 ./main
-    ```
 
-## Examples
+## Conclusion
 
-Here is an example of running the algorithm with 4 processes:
-```bash
-mpirun -np 4 ./main
+Thank you for exploring our project! We hope you find it valuable and easy to use. If you encounter any issues, have suggestions for improvements, or would like to contribute, please feel free reach out.
+
+Your feedback is highly appreciated!
