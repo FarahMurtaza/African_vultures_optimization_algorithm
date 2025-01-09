@@ -31,9 +31,9 @@ The AVOA algorithm follows these steps:
 
 Before running the AVOA algorithm, ensure that you have the following prerequisites installed on your system:
 
-- **C and C++ Compiler**: A compiler that supports C++14 standard.
-- **MPI Library**: An implementation of the Message Passing Interface (MPI), such as MPICH or OpenMPI.
-- **Boost Libraries**: Boost C++ libraries, particularly for mathematical functions.
+- C and C++ Compiler: A compiler that supports C++14 standard.
+- MPI Library: An implementation of the Message Passing Interface (MPI), such as MPICH or OpenMPI.
+- Boost Libraries: Boost C++ libraries, particularly for mathematical functions.
 
 
 ### Installation
