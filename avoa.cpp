@@ -9,7 +9,7 @@
 // Function prototypes
 double S1, S2;
 
-// Define your problem-specific parameters here
+// Problem-specific parameters here
 const int N = 3; // Population size
 const int T = 5; // Maximum number of iterations
 
