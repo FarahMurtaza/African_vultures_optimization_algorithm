@@ -139,14 +139,6 @@ void Eq10(std::vector<double> &P, const std::vector<double> &R, double F)
     }
 }
 
-// void Eq13(std::vector<double> &P, const std::vector<double> &R) {
-//     for (size_t d = 0; d < P.size(); d++) {
-//         double S1 = R[d] * std::cos(P[d]) * 0.1;
-//         double S2 = R[d] * std::sin(P[d]) * 0.1;
-//         P[d] = R[d] - (S1 + S2);
-//     }
-// }
-
 void Eq13(std::vector<double> &P, const std::vector<double> &R)
 {
     for (size_t d = 0; d < P.size(); d++)
