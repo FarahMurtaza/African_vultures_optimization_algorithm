@@ -155,15 +155,6 @@ void Eq13(std::vector<double> &P, const std::vector<double> &R)
 
 void Eq16(std::vector<double> &P, const std::vector<double> &BestVulture1, const std::vector<double> &BestVulture2, double F)
 {
-    // for (size_t d = 0; d < P.size(); d++) {
-    //     P[d] = 0.5*(A1[d] + A2[d]);
-    // }
-
-    // size_t dim = P.size();
-    // if (BestVulture1.size() != dim || BestVulture2.size() != dim) {
-    //     throw std::invalid_argument("Vector dimensions must match.");
-    // }
-
     for (size_t d = 0; d < P.size(); d++)
     {
         // Calculate A1 for dimension d:
