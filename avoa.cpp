@@ -1,288 +1,440 @@
 #include <iostream>
-#include <cmath>
-#include <random>
+#include <fstream>
 #include <vector>
-#include <boost/math/special_functions/gamma.hpp>
+#include <random>
+#include <cmath>
+#include <limits>
+#include <algorithm>
 #include <mpi.h>
-#include "avoa.h"
+#include <boost/math/special_functions/gamma.hpp>
+#include <cstdlib>
 
-// Function prototypes
-double S1, S2;
+static double LOWER_BOUND = 0.0;
+static double UPPER_BOUND = 0.0;
 
-// Problem-specific parameters here
-const int N = 3; // Population size
-const int T = 5; // Maximum number of iterations
+// Global best values fitness + solution vector
+static double bestFitness = std::numeric_limits<double>::infinity();
+static double secondBestFitness = std::numeric_limits<double>::infinity();
+static std::vector<double> PBestVulture1; // best position
+static std::vector<double> PBestVulture2; // second best position
 
-// Placeholder for Best Vulture categories
-double BestVulture1 = 0.0;
-double BestVulture2 = 0.0;
-
-double X;
-double L1 = 0.8, L2 = 0.2, P1 = 0.5, P2 = 0.5, P3 = 0.5;
-
-double bestFitness = std::numeric_limits<double>::lowest();
-double secondBestFitness = std::numeric_limits<double>::lowest();
-
-// Placeholder for PBestVultures
-double PBestVulture1 = 0.0;
-double PBestVulture2 = 0.0;
-
-// Placeholder for 'Pi' definition
-std::vector<double> Pi(N);
-
-// Improved Eq. (1) implementation
-double Eq1(double pi, double L1, double L2, double BestVulture1, double BestVulture2)
+// Benchmark Functions
+double F1(const std::vector<double> &x)
 {
-    if (pi >= 0.8) {
-        return BestVulture1;
-    } else if (pi >= 0.2) {
-        return BestVulture2;
-    } else {
-        return 0.0; // If pi is less than 0.2, return 0.0 or some default value
-    }
+    double sum = 0.0;
+    for (double xi : x)
+        sum += xi * xi;
+    return sum;
 }
 
-// Corrected Eq. (4) implementation
-double Eq4(double rand, double z, int iteration, int maxIterations, double h, double w)
+double F2(const std::vector<double> &x)
 {
-    double factor = h * (pow(sin(M_PI / 2.0 * static_cast<double>(iteration) / maxIterations), w) +
-                         cos(M_PI / 2.0 * static_cast<double>(iteration) / maxIterations) - 1.0);
-    double result = factor + (2.0 * rand + 1.0) * z * (1.0 - static_cast<double>(iteration) / maxIterations);
-    
-    // Ensure result is non-zero
-    if (result == 0.0) {
-        result = 0.1;
-    }
-    
-    // std::cout << "Eq4: rand=" << rand << " z=" << z << " iteration=" << iteration << " maxIterations=" << maxIterations << " h=" << h << " w=" << w << " result=" << result << std::endl;
-    return result;
-}
-
-// Placeholder for Eq. (5) implementation
-void Eq5(double &P_i, double R_i, double F, double P1)
-{
-    double randP1 = static_cast<double>(rand()) / RAND_MAX;
-    if (P1 >= randP1)
+    double sum = 0.0;
+    double product = 1.0;
+    for (double xi : x)
     {
-        Eq6(P_i, R_i, F);
+        sum += std::fabs(xi);
+        product *= std::fabs(xi);
+    }
+    return sum + product;
+}
+
+double F3(const std::vector<double> &x)
+{
+    double total = 0.0;
+    for (size_t i = 0; i < x.size(); i++)
+    {
+        double partialSum = 0.0;
+        for (size_t j = 0; j <= i; j++)
+        {
+            partialSum += x[j];
+        }
+        total += (partialSum * partialSum);
+    }
+    return total;
+}
+
+using FitnessFunction = double (*)(const std::vector<double> &);
+
+FitnessFunction selectFunction(int choice)
+{
+    switch (choice)
+    {
+    case 1:
+        return F1;
+    case 2:
+        return F2;
+    case 3:
+        return F3;
+    default:
+        return F1;
+    }
+}
+
+// Random helpers
+static thread_local std::mt19937 rng(std::random_device{}());
+static double rand01()
+{
+    static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
+    return dist(rng);
+}
+
+// Eq1
+void Eq1(const std::vector<double> &best1,
+         const std::vector<double> &best2,
+         int iteration, int maxIterations,
+         double L1, double L2,
+         std::vector<double> &R)
+{
+    double alpha = L2 + (L1 - L2) * (1.0 - (double)iteration / (double)maxIterations);
+    size_t dim = best1.size();
+    R.resize(dim);
+    for (size_t d = 0; d < dim; d++)
+    {
+        R[d] = alpha * best1[d] + (1.0 - alpha) * best2[d];
+    }
+}
+
+// Eq4
+double Eq4(double randVal, double z, int iteration, int maxIterations, double h, double w)
+{
+    double t = (double)iteration;
+    double T = (double)maxIterations;
+
+    double factor = h * (std::pow(std::sin(M_PI / 2.0 * t / T), w) + std::cos(M_PI / 2.0 * t / T) - 1.0);
+    double F = factor + (2.0 * randVal + 1.0) * z * (1.0 - t / T);
+    return F;
+}
+
+void Eq6(std::vector<double> &P, const std::vector<double> &R, double F)
+{
+    for (size_t d = 0; d < P.size(); d++)
+    {
+        double randX = rand01();
+        P[d] = R[d] - std::fabs(randX * R[d] - P[d]) * F;
+    }
+}
+
+void Eq8(std::vector<double> &P, const std::vector<double> &R, double F)
+{
+    double r2 = rand01();
+    double r3 = rand01();
+    double lb = 0.1, ub = 1.0;
+    double step = (ub - lb) * r3 + lb;
+
+    for (size_t d = 0; d < P.size(); d++)
+    {
+        P[d] = R[d] - F + r2 * step;
+    }
+}
+
+void Eq10(std::vector<double> &P, const std::vector<double> &R, double F)
+{
+    for (size_t d = 0; d < P.size(); d++)
+    {
+        double rr = rand01();
+        double D_d = std::fabs(rr * R[d] - P[d]);
+        double rr2 = rand01();
+        P[d] = D_d * (F + rr2) - (R[d] - P[d]);
+    }
+}
+
+// void Eq13(std::vector<double> &P, const std::vector<double> &R) {
+//     for (size_t d = 0; d < P.size(); d++) {
+//         double S1 = R[d] * std::cos(P[d]) * 0.1;
+//         double S2 = R[d] * std::sin(P[d]) * 0.1;
+//         P[d] = R[d] - (S1 + S2);
+//     }
+// }
+
+void Eq13(std::vector<double> &P, const std::vector<double> &R)
+{
+    for (size_t d = 0; d < P.size(); d++)
+    {
+        double rand5 = rand01();
+        double rand6 = rand01();
+        double factor1 = rand5 * (P[d] / (2.0 * M_PI));
+        double factor2 = rand6 * (P[d] / (2.0 * M_PI));
+        double S1 = R[d] * factor1 * std::cos(P[d]);
+        double S2 = R[d] * factor2 * std::sin(P[d]);
+        P[d] = R[d] - (S1 + S2);
+    }
+}
+
+void Eq16(std::vector<double> &P, const std::vector<double> &BestVulture1, const std::vector<double> &BestVulture2, double F)
+{
+    // for (size_t d = 0; d < P.size(); d++) {
+    //     P[d] = 0.5*(A1[d] + A2[d]);
+    // }
+
+    // size_t dim = P.size();
+    // if (BestVulture1.size() != dim || BestVulture2.size() != dim) {
+    //     throw std::invalid_argument("Vector dimensions must match.");
+    // }
+
+    for (size_t d = 0; d < P.size(); d++)
+    {
+        // Calculate A1 for dimension d:
+        // Avoid division by zero by checking the denominator.
+        double denom1 = BestVulture1[d] - (P[d] * P[d] * F);
+        double A1;
+        if (std::fabs(denom1) < 1e-10)
+        {
+            // If the denominator is nearly zero, use BestVulture1[d] as a fallback.
+            A1 = BestVulture1[d];
+        }
+        else
+        {
+            A1 = BestVulture1[d] - (BestVulture1[d] * P[d]) / denom1;
+        }
+
+        // Calculate A2 for dimension d:
+        double denom2 = BestVulture2[d] - (P[d] * P[d] * F);
+        double A2;
+        if (std::fabs(denom2) < 1e-10)
+        {
+            A2 = BestVulture2[d];
+        }
+        else
+        {
+            A2 = BestVulture2[d] - (BestVulture2[d] * P[d]) / denom2;
+        }
+
+        // Aggregate A1 and A2 to update the position P:
+        P[d] = 0.5 * (A1 + A2);
+    }
+}
+
+// Levy flight
+double LevyFlight()
+{
+    std::uniform_real_distribution<double> dist01(0.0, 1.0);
+    double u = dist01(rng);
+    double v = dist01(rng);
+    double beta = 1.5, beta2 = 1.5;
+
+    double numerator = boost::math::tgamma(1.0 + beta) * std::sin(M_PI * beta / 2.0);
+    double denominator = boost::math::tgamma((1.0 + beta2)) * beta * (2.0 * (beta - 1.0) / 2.0);
+    double sigma = std::pow(numerator / denominator, 1.0 / beta);
+
+    double step = sigma / std::pow(std::fabs(v), 1.0 / beta);
+    return 0.01 * step * u;
+}
+
+void Eq17(std::vector<double> &P, const std::vector<double> &R, double F,
+          int iteration, int maxIterations)
+{
+    for (size_t d = 0; d < P.size(); d++)
+    {
+        double d_t = R[d] - P[d];
+        double levy = LevyFlight();
+        P[d] = R[d] - std::fabs(d_t) * F * levy;
+    }
+}
+
+// The main AVOA function
+void AVOA_MPI(int rank, int size,
+              int functionChoice,
+              int populationSize,
+              int maxIterations,
+              double L1, double L2,
+              double w,
+              double P1, double P2, double P3,
+              int dimension)
+{
+
+    if (functionChoice == 2)
+    {
+        // F2 range is [-10, 10]
+        LOWER_BOUND = -10.0;
+        UPPER_BOUND = 10.0;
     }
     else
     {
-        Eq8(P_i, R_i, F);
+        // F1, F3 => [-100, 100]
+        LOWER_BOUND = -100.0;
+        UPPER_BOUND = 100.0;
     }
-}
 
-// Placeholder for Eq. (6) implementation
-void Eq6(double &P_i, double R_i, double F)
-{
-    double X = 2.0 * static_cast<double>(rand()) / RAND_MAX;
-    P_i = R_i - fabs(X * R_i - P_i) * F;
-}
+    // Split the population across ranks
+    int localPopSize = populationSize / size;
+    if (populationSize % size != 0 && rank == 0)
+    {
+        std::cerr << "Warning: populationSize not divisible by #ranks.\n";
+    }
 
-// Placeholder for Eq. (7) implementation
-double Eq7(double R_i, double P_i)
-{
-    return fabs(2.0 * static_cast<double>(rand()) / RAND_MAX * R_i - P_i);
-}
+    // localPopulation: each rank only sees localPopSize vultures
+    std::vector<std::vector<double>> localPopulation(localPopSize, std::vector<double>(dimension));
 
-// Placeholder for Eq. (8) implementation
-void Eq8(double &P_i, double R_i, double F)
-{
-    double rand2 = static_cast<double>(rand()) / RAND_MAX;
-    double rand3 = static_cast<double>(rand()) / RAND_MAX;
-    double lb = 0.1; // Modified to ensure non-zero range
-    double ub = 1.0;
-
-    P_i = R_i - F + rand2 * ((ub - lb) * rand3 + lb);
-}
-
-// Placeholder for Eq. (10) implementation
-void Eq10(double &P_i, double R_i, double F)
-{
-    double D_i = Eq7(R_i, P_i);
-    P_i = D_i * (F + static_cast<double>(rand()) / RAND_MAX) - Eq11(R_i, P_i);
-}
-
-// Placeholder for Eq. (11) implementation
-double Eq11(double R_i, double P_i)
-{
-    return R_i - P_i;
-}
-
-// Placeholder for Eq. (12) implementation
-void Eq12(double &S1, double &S2, double R_i, double P_i)
-{
-    double rand5 = static_cast<double>(rand()) / RAND_MAX;
-    double rand6 = static_cast<double>(rand()) / RAND_MAX;
-
-    S1 = R_i * (rand5 * P_i / (2 * M_PI)) * cos(P_i);
-    S2 = R_i * (rand6 * P_i / (2 * M_PI)) * sin(P_i);
-}
-
-// Placeholder for Eq. (13) implementation
-void Eq13(double &P_i, double R_i)
-{
-    P_i = R_i - (S1 + S2);
-}
-
-// Placeholder for Eq. (15) implementation
-void Eq15(double &A1, double &A2, double BestVulture1_i, double BestVulture2_i, double P_i, double F)
-{
-    A1 = BestVulture1_i - (BestVulture1_i * P_i) / (BestVulture1_i - pow(P_i, 2.0) * F);
-    A2 = BestVulture2_i - (BestVulture2_i * P_i) / (BestVulture2_i - pow(P_i, 2.0) * F);
-}
-
-// Placeholder for Eq. (16) implementation
-void Eq16(double &P_i, double A1, double A2)
-{
-    P_i = (A1 + A2) / 2.0;
-}
-
-// Placeholder for Eq. (17) implementation
-void Eq17(double &P_i, double R_i, double F)
-{
-    double d_t = R_i - P_i;
-    double levy = LevyFlight();
-    P_i = R_i - fabs(d_t) * F * levy;
-}
-
-// Placeholder for LevyFlight implementation
-double LevyFlight()
-{
-    double beta = 1.5; // Placeholder, replace with actual value
-    double u = static_cast<double>(rand()) / RAND_MAX;
-    double v = static_cast<double>(rand()) / RAND_MAX;
-
-    double sigma = pow((boost::math::tgamma(1.0 + beta) * sin(M_PI * beta / 2.0) /
-                        (boost::math::tgamma(1.0 + beta * 2.0) * beta * pow(2.0, (beta - 1) / 2.0))),
-                       1 / beta);
-
-    return 0.01 * u * sigma / pow(fabs(v), 1.0 / beta);
-}
-
-void AVOA_MPI(int rank, int size)
-{
-    // Distribute the population among processes
-    int local_population_size = N / size;
-    std::vector<double> Pi_local(local_population_size);
-
-    // Initialize the random population Pi(i=1,2,...,N)
+    // random init
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(0.1, 1.0); // Modified to avoid zero values
-    
-    for (int i = 0; i < local_population_size; ++i)
+    std::uniform_real_distribution<double> distPos(LOWER_BOUND, UPPER_BOUND);
+
+    for (int i = 0; i < localPopSize; i++)
     {
-        Pi_local[i] = dis(gen);
-        std::cout << "Initialization: Process " << rank << " - Vulture " << i << " - Initial Location: " << Pi_local[i] << std::endl;
+        for (int d = 0; d < dimension; d++)
+        {
+            localPopulation[i][d] = distPos(gen);
+        }
     }
 
-    for (int iteration = 0; iteration < T; ++iteration)
+    FitnessFunction fitnessFunc = selectFunction(functionChoice);
+
+    bestFitness = std::numeric_limits<double>::infinity();
+    secondBestFitness = std::numeric_limits<double>::infinity();
+
+    PBestVulture1.resize(dimension, 0.0);
+    PBestVulture2.resize(dimension, 0.0);
+
+    std::vector<double> iterationBestLog(maxIterations, 0.0);
+
+    double hValue = 1.0;
+
+    // 4) Main iteration loop
+    for (int iter = 0; iter < maxIterations; iter++)
     {
-        // Calculate fitness values for local population
-        double sumFi_local = 0.0;
-        for (int i = 0; i < local_population_size; ++i)
+
+        // (A) Evaluate local pop => find local best & 2nd best
+        double localBestFit = std::numeric_limits<double>::infinity();
+        std::vector<double> localBestPos(dimension);
+
+        double localSecondBestFit = std::numeric_limits<double>::infinity();
+        std::vector<double> localSecondBestPos(dimension);
+
+        for (int i = 0; i < localPopSize; i++)
         {
-            double z = Pi_local[i]; // Use the current position as `z`
-            double rand_val = dis(gen);
-            double Fi_local = Eq4(rand_val, z, iteration, T, 0.0, 1.0);
-            std::cout << "Fitness Calculation: Process " << rank << " - Vulture " << i << " - z: " << z << " - rand_val: " << rand_val << " - Fi_local: " << Fi_local << std::endl;
-            sumFi_local += Fi_local;
+            double fVal = fitnessFunc(localPopulation[i]);
+            if (fVal < localBestFit)
+            {
+                localSecondBestFit = localBestFit;
+                localSecondBestPos = localBestPos;
+
+                localBestFit = fVal;
+                localBestPos = localPopulation[i];
+            }
+            else if (fVal < localSecondBestFit)
+            {
+                localSecondBestFit = fVal;
+                localSecondBestPos = localPopulation[i];
+            }
         }
 
-        // Gather the sum of fitness values from all processes
-        double sumFi_global;
-        MPI_Allreduce(&sumFi_local, &sumFi_global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        // (B) MPI_Allreduce to find global min
+        double globalBestFit = 0.0;
+        MPI_Allreduce(&localBestFit, &globalBestFit, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
-        if (sumFi_global == 0) {
-            std::cerr << "Error: sumFi_global is zero, cannot proceed with calculation." << std::endl;
-            MPI_Abort(MPI_COMM_WORLD, 1);
+        bool iAmOwner = (std::fabs(localBestFit - globalBestFit) < 1e-14);
+        if (iAmOwner)
+        {
+            bestFitness = localBestFit;
+            secondBestFitness = localSecondBestFit;
+            PBestVulture1 = localBestPos;
+            PBestVulture2 = localSecondBestPos;
         }
 
-        // Calculate pi values for local population
-        for (int i = 0; i < local_population_size; ++i)
+        // broadcast bestFitness, secondBestFitness, best positions
+        MPI_Bcast(&bestFitness, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&secondBestFitness, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+        if (rank != 0)
         {
-            double z = Pi_local[i]; // Use the current position as `z`
-            double Fi_local = Eq4(dis(gen), z, iteration, T, 0.0, 1.0);
-            double pi = (sumFi_global != 0) ? Fi_local / sumFi_global : 0.0;
-            std::cout << "Process " << rank << " - Vulture " << i << " - pi: " << pi << std::endl;
+            PBestVulture1.resize(dimension);
+            PBestVulture2.resize(dimension);
+        }
+        MPI_Bcast(PBestVulture1.data(), dimension, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Bcast(PBestVulture2.data(), dimension, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-            // Perform Equation 1 using pi
-            double R_i = Eq1(pi, L1, L2, BestVulture1, BestVulture2);
+        if (rank == 0)
+        {
+            std::cout << "Iteration " << iter
+                      << " | bestFitness=" << bestFitness
+                      << std::endl;
+        }
+        iterationBestLog[iter] = bestFitness;
 
-            // Update the location Vulture based on conditions
-            double F = Eq4(dis(gen), z, iteration, T, 0.0, 1.0);
+        // (C) Update each local vulture (each individual)
+        for (int i = 0; i < localPopSize; i++)
+        {
+            // Create a reference vector R by Eq1 using the global best positions.
+            std::vector<double> R(dimension);
+            Eq1(PBestVulture1, PBestVulture2, iter, maxIterations, L1, L2, R);
 
-            // Update Best Vultures based on fitness values
-            double currentFitness = Eq1(Pi_local[i], L1, L2, BestVulture1, BestVulture2);
-            if (currentFitness > bestFitness)
+            // Compute a representative F value for the individual.
+            // For example, average the Eq4 value over all dimensions.
+            double F_val = 0.0;
+            for (int d = 0; d < dimension; d++)
             {
-                secondBestFitness = bestFitness;
-                bestFitness = currentFitness;
-
-                PBestVulture2 = PBestVulture1;
-                PBestVulture1 = Pi_local[i];
+                F_val += Eq4(rand01(), localPopulation[i][d], iter, maxIterations, hValue, w);
             }
-            else if (currentFitness > secondBestFitness)
-            {
-                secondBestFitness = currentFitness;
-                PBestVulture2 = Pi_local[i];
-            }
+            F_val /= dimension;
+            double absF = std::fabs(F_val);
 
-            if (fabs(F) >= 1)
+            // Select one of the update operators based on absF and the probabilities.
+            if (absF >= 1.0)
             {
-                if (P1 >= dis(gen))
+                if (rand01() < P1)
                 {
-                    Eq6(Pi_local[i], R_i, F);
+                    Eq6(localPopulation[i], R, F_val);
                 }
                 else
                 {
-                    Eq8(Pi_local[i], R_i, F);
+                    Eq8(localPopulation[i], R, F_val);
+                }
+            }
+            else if (absF >= 0.5)
+            {
+                if (rand01() < P2)
+                {
+                    Eq10(localPopulation[i], R, F_val);
+                }
+                else
+                {
+                    Eq13(localPopulation[i], R);
                 }
             }
             else
             {
-                if (fabs(F) >= 0.5)
+                if (rand01() < P3)
                 {
-                    if (P2 >= dis(gen))
-                    {
-                        Eq10(Pi_local[i], R_i, F);
-                    }
-                    else
-                    {
-                        Eq13(Pi_local[i], R_i);
-                    }
+                    Eq16(localPopulation[i], PBestVulture1, PBestVulture2, F_val);
                 }
                 else
                 {
-                    if (P3 >= dis(gen))
-                    {
-                        Eq16(Pi_local[i], R_i, F);
-                    }
-                    else
-                    {
-                        Eq17(Pi_local[i], R_i, F);
-                    }
+                    Eq17(localPopulation[i], R, F_val, iter, maxIterations);
                 }
             }
 
-            // Improved debug output for intermediate values
-            std::cout << "-----------------------------------------------" << std::endl;
-            std::cout << "Process " << rank << " - Iteration " << iteration
-                      << " - Vulture " << i << std::endl;
-            std::cout << "Location: " << Pi_local[i]
-                    //   << " - Fitness Value: " << currentFitness
-                      << " - R_i: " << R_i
-                      << " - F: " << F << std::endl;
-            std::cout << "-----------------------------------------------" << std::endl;
+            // Clamp each dimension of the updated individual to the defined bounds.
+            for (int d = 0; d < dimension; d++)
+            {
+                if (localPopulation[i][d] < LOWER_BOUND)
+                    localPopulation[i][d] = LOWER_BOUND;
+                if (localPopulation[i][d] > UPPER_BOUND)
+                    localPopulation[i][d] = UPPER_BOUND;
+            }
         }
 
-        // Gather the updated population from all processes
-        MPI_Gather(Pi_local.data(), local_population_size, MPI_DOUBLE, Pi.data(), local_population_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    } // end localPop loop
+    // end iteration loop
 
-        // Stopping condition check
+    // rank=0 prints final result, writes fitness_log
+    if (rank == 0)
+    {
+        std::cout << "\n=== AVOA finished ===\n";
+        std::cout << "Final best fitness=" << bestFitness << "\n";
+        std::cout << "Best position=[ ";
+        for (double c : PBestVulture1)
+            std::cout << c << " ";
+        std::cout << "]\n";
 
-        // Barrier to synchronize processes
-        MPI_Barrier(MPI_COMM_WORLD);
+        std::ofstream outFile("fitness_log.txt");
+        for (double val : iterationBestLog)
+        {
+            outFile << val << "\n";
+        }
+        outFile.close();
+
+        std::system("python3 analyze_convergence.py");
     }
 }
