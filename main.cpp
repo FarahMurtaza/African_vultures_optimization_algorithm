@@ -50,7 +50,7 @@ int main(int argc, char **argv)
     MPI_Bcast(&functionChoice, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&dimension, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Now call your AVOA function
+    // Call AVOA function
     AVOA_MPI(rank, size, functionChoice,
              populationSize, maxIterations,
              L1, L2, w, P1, P2, P3,
